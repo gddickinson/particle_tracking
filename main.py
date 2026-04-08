@@ -148,10 +148,10 @@ class ImageViewer(pg.ImageView):
         for line in self.track_lines:
             try:
                 self.view.removeItem(line)
-            except:
+            except (RuntimeError, ValueError):
                 pass
         self.track_lines = []
-        
+
         if tracks is None or len(tracks) == 0:
             return
         
@@ -237,7 +237,7 @@ class ImageViewer(pg.ImageView):
                     self.set_particles(self.particles, current_frame)
                 if self.tracks is not None:
                     self.set_tracks(self.tracks, current_frame)
-        except:
+        except (AttributeError, RuntimeError):
             # Fallback
             if self.particles is not None:
                 self.set_particles(self.particles, current_frame)
@@ -727,7 +727,7 @@ class ParticleTrackingGUI(QMainWindow):
             for line in self.tracking_viewer.track_lines:
                 try:
                     self.tracking_viewer.view.removeItem(line)
-                except:
+                except (RuntimeError, ValueError):
                     pass
             self.tracking_viewer.track_lines = []
             print(f"  Hiding tracks")  # Debug

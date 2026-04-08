@@ -62,11 +62,19 @@ class ParticleTracker:
         """
         if not self.trackpy_available:
             raise ImportError("trackpy is required for particle detection")
-        
+
+        # Parameter validation
+        if diameter < 3:
+            raise ValueError(f"diameter must be >= 3, got {diameter}")
+        if minmass < 0:
+            raise ValueError(f"minmass must be >= 0, got {minmass}")
+        if percentile < 0 or percentile > 100:
+            raise ValueError(f"percentile must be between 0 and 100, got {percentile}")
+
         # Ensure diameter is odd
         if diameter % 2 == 0:
             diameter += 1
-        
+
         if separation is None:
             separation = diameter + 1
         
@@ -120,7 +128,13 @@ class ParticleTracker:
         """
         if not self.trackpy_available:
             raise ImportError("trackpy is required for particle linking")
-        
+
+        # Parameter validation
+        if search_range <= 0:
+            raise ValueError(f"search_range must be > 0, got {search_range}")
+        if memory < 0:
+            raise ValueError(f"memory must be >= 0, got {memory}")
+
         print(f"Linking particles with search range={search_range}, memory={memory}...")
         
         # Link particles into trajectories

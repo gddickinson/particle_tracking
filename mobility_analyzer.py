@@ -32,8 +32,22 @@ class MobilityAnalyzer:
     """
     
     def __init__(self):
-        """Initialize mobility analyzer"""
-        self.brownian_alpha_range = (0.9, 1.1)  # α for Brownian motion
+        """Initialize mobility analyzer with classification thresholds.
+
+        Threshold explanations:
+        - brownian_alpha_range: Anomalous exponent alpha in (0.9, 1.1) indicates
+          normal Brownian diffusion (alpha=1 is pure Brownian).
+        - subdiffusion_threshold: alpha < 0.9 indicates subdiffusive motion
+          (e.g., crowded environments, viscoelastic media).
+        - superdiffusion_threshold: alpha > 1.1 indicates superdiffusive motion
+          (e.g., active transport along cytoskeleton).
+        - confinement_threshold: Ratio of end-to-end distance to
+          Rg*sqrt(track_length). Values < 0.3 suggest confinement
+          (e.g., corralled membrane proteins).
+        - directedness_threshold: Straightness index (end-to-end / path length).
+          Values > 0.5 suggest directed/processive motion.
+        """
+        self.brownian_alpha_range = (0.9, 1.1)  # alpha for Brownian motion
         self.subdiffusion_threshold = 0.9
         self.superdiffusion_threshold = 1.1
         self.confinement_threshold = 0.3  # Radius of gyration ratio
@@ -65,9 +79,15 @@ class MobilityAnalyzer:
         msd : pd.DataFrame
             MSD data indexed by lag time
         """
+        # Validate inputs to prevent division-by-zero
+        if pixel_size <= 0:
+            raise ValueError(f"pixel_size must be > 0, got {pixel_size}")
+        if fps <= 0:
+            raise ValueError(f"fps must be > 0, got {fps}")
+
         try:
             import trackpy as tp
-            
+
             # Convert positions to microns
             tracks_microns = tracks.copy()
             tracks_microns['x'] = tracks['x'] * pixel_size
@@ -216,7 +236,7 @@ class MobilityAnalyzer:
                     'D': D,
                     'alpha': 1.0  # Effectively Brownian within confinement
                 }
-            except:
+            except (RuntimeError, ValueError, TypeError):
                 return {'L': np.nan, 'D': np.nan, 'alpha': np.nan}
         
         else:
