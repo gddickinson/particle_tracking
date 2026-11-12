@@ -56,7 +56,7 @@ route('tracks', async (args, query) => {
     page = Math.min(page, pages - 1);
     $('#tb').innerHTML = list(all.slice(page * PAGE, page * PAGE + PAGE), t => `<tr class="click${t.particle === selected ? ' sel' : ''}" tabindex="0" data-id="${esc(t.particle)}">
       <td>${esc(t.particle)}</td><td>${t.track_length}</td><td>${f(t.D)}</td><td>${f(t.alpha, 3)}</td><td>${f(t.directedness, 3)}</td>
-      <td>${f(t.confinement_ratio, 3)}</td><td>${cls(t.mobility_class)}</td>${r.has_labels ? `<td>${esc(TRUE_NAMES[t.true_mobility] || t.true_mobility)}</td>` : ''}</tr>`);
+      <td>${f(t.confinement_level, 3)}</td><td>${f(t.confinement_ratio_legacy, 3)}</td><td>${cls(t.mobility_class)}</td>${r.has_labels ? `<td>${esc(TRUE_NAMES[t.true_mobility] || t.true_mobility)}</td>` : ''}</tr>`);
     $('#pg').textContent = `page ${page + 1} of ${pages} · ${all.length} tracks`;
     $$('#tb tr').forEach(tr => {
       tr.onclick = () => pick(tr.dataset.id);
@@ -85,7 +85,8 @@ function detail(r, tracks, id) {
     <dl class="kv"><dt>points</dt><dd>${n} (${f((t.frames[n - 1] - t.frames[0]) * r.params.frame_interval_s)} s)</dd>
       <dt>D</dt><dd>${f(m.D)} µm²/s</dd><dt>α</dt><dd>${f(m.alpha, 3)}</dd>
       <dt>directedness</dt><dd>${f(m.directedness, 3)} (directed above ${r.params.directedness_threshold})</dd>
-      <dt>confinement ratio</dt><dd>${f(m.confinement_ratio, 3)} (confined below ${r.params.confinement_threshold})</dd></dl>
+      <dt>confinement level</dt><dd>${f(m.confinement_level, 3)} (confined above ${r.params.confinement_level_threshold})</dd>
+      <dt>legacy ratio</dt><dd>${f(m.confinement_ratio_legacy, 3)} (not used to classify)</dd></dl>
     <div class="charts mini">
       <div>${trackSvg(x, y, { color: COLORS[m.mobility_class] })}<p class="small mute">Trajectory in µm: start amber, end magenta.</p></div>
       <div>${msdPlot([{ name: 'time-averaged MSD', color: COLORS[m.mobility_class], x: lags, y: msd, dots: true, fits }])}

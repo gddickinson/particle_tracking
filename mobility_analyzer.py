@@ -25,7 +25,8 @@ from scipy.stats import linregress
 from scipy.optimize import curve_fit
 from typing import Tuple, Dict, Optional
 
-from mobility_metrics import frame_msd, frame_span
+from mobility_metrics import (CONFINEMENT_LEVEL_THRESHOLD, confinement_level,
+                              frame_msd, frame_span)
 
 
 class MobilityAnalyzer:
@@ -43,16 +44,20 @@ class MobilityAnalyzer:
           (e.g., crowded environments, viscoelastic media).
         - superdiffusion_threshold: alpha > 1.1 indicates superdiffusive motion
           (e.g., active transport along cytoskeleton).
-        - confinement_threshold: Ratio of end-to-end distance to
-          Rg*sqrt(track_length). Values < 0.3 suggest confinement
-          (e.g., corralled membrane proteins).
+        - confinement_level_threshold: Saxton/Simson confinement level
+          -log10(psi) above which a track is confined (3.16, psi < ~0.07 %;
+          see mobility_metrics.confinement_level and calculate_confinement_level).
+        - confinement_threshold: LEGACY, no longer used for classification.
+          Ratio of end-to-end distance to Rg*sqrt(track_length) < 0.3; this
+          ratio falls as 1/sqrt(n) for any motion (calculate_confinement_ratio).
         - directedness_threshold: Straightness index (end-to-end / path length).
           Values > 0.5 suggest directed/processive motion.
         """
         self.brownian_alpha_range = (0.9, 1.1)  # alpha for Brownian motion
         self.subdiffusion_threshold = 0.9
         self.superdiffusion_threshold = 1.1
-        self.confinement_threshold = 0.3  # Radius of gyration ratio
+        self.confinement_threshold = 0.3  # LEGACY radius-of-gyration ratio (not used to classify)
+        self.confinement_level_threshold = CONFINEMENT_LEVEL_THRESHOLD
         self.directedness_threshold = 0.5  # Straightness threshold
     
     def calculate_msd(self, tracks: pd.DataFrame,
@@ -341,7 +346,7 @@ class MobilityAnalyzer:
     def calculate_confinement_ratio(self, tracks: pd.DataFrame,
                                     pixel_size: float = 0.065) -> np.ndarray:
         """
-        Confinement ratio of each trajectory (used by detect_confinement)
+        LEGACY confinement ratio of each trajectory (no longer used to classify)
 
         ratio = end-to-end distance / (Rg * sqrt(track_length)), with Rg the
         radius of gyration. It is dimensionless (pixel_size cancels).
@@ -379,10 +384,32 @@ class MobilityAnalyzer:
         
         return np.array(ratios, dtype=float)
     
-    def detect_confinement(self, tracks: pd.DataFrame,
-                          pixel_size: float = 0.065) -> np.ndarray:
+    def calculate_confinement_level(self, tracks: pd.DataFrame,
+                                    pixel_size: float = 0.065,
+                                    fps: float = 10.0) -> np.ndarray:
         """
-        Detect confined motion using radius of gyration
+        Saxton/Simson confinement level of each trajectory
+
+        L = -log10(psi), psi = probability that a free random walker with the
+        track's initial-slope D (MSD frame lags 1-4) stays within R, the
+        track's maximum distance from its first position, for the track's
+        duration (Saxton 1993, doi:10.1016/S0006-3495(93)81548-0; Simson et
+        al. 1995, doi:10.1016/S0006-3495(95)79972-6). Dimensionless and, for
+        free diffusion, independent of track length. NaN if R = 0.
+        """
+        levels = []
+        for particle_id in tracks['particle'].unique():
+            particle = tracks[tracks['particle'] == particle_id].sort_values('frame')
+            levels.append(confinement_level(particle['frame'].values,
+                                            particle['x'].values * pixel_size,
+                                            particle['y'].values * pixel_size, fps))
+        return np.array(levels, dtype=float)
+    
+    def detect_confinement(self, tracks: pd.DataFrame,
+                          pixel_size: float = 0.065,
+                          fps: float = 10.0) -> np.ndarray:
+        """
+        Detect confined motion (Saxton/Simson probability criterion)
         
         Parameters
         ----------
@@ -390,15 +417,17 @@ class MobilityAnalyzer:
             Trajectories
         pixel_size : float
             Pixel size (microns)
+        fps : float
+            Frame rate (Hz)
             
         Returns
         -------
         is_confined : np.ndarray
             Boolean array indicating confined motion
-            (calculate_confinement_ratio < confinement_threshold)
+            (calculate_confinement_level > confinement_level_threshold)
         """
-        ratios = self.calculate_confinement_ratio(tracks, pixel_size)
-        return ratios < self.confinement_threshold
+        levels = self.calculate_confinement_level(tracks, pixel_size, fps)
+        return levels > self.confinement_level_threshold
     
     def calculate_directedness(self, tracks: pd.DataFrame,
                               pixel_size: float = 0.065) -> np.ndarray:
@@ -477,7 +506,7 @@ class MobilityAnalyzer:
         """
         # Calculate metrics
         alphas = self.calculate_anomalous_exponent(tracks, pixel_size, fps)
-        is_confined = self.detect_confinement(tracks, pixel_size)
+        is_confined = self.detect_confinement(tracks, pixel_size, fps)
         directedness = self.calculate_directedness(tracks, pixel_size)
         
         # Classify

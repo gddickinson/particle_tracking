@@ -22,3 +22,15 @@
   `calculate_anomalous_exponent`, `_calculate_msd_manual`; engine.js mirrors it). Tracks with gaps in their frame
   numbers (trackpy memory > 0) now get correct lag times; their D and α change. Tracks without gaps give the same
   numbers as before. A repeated frame keeps its first localisation. Tests: `tests/test_mobility_fixes.py`.
+- **Fix: confinement criterion** (changes classifications by design). `detect_confinement` now uses the
+  Saxton/Simson confinement level −log10 ψ = 2.5117·D·t/R² − 0.2048 > 3.16 (`mobility_metrics.confinement_level`;
+  D from MSD frame lags 1–4, t = duration, R = max distance from start; Saxton 1993 doi:10.1016/S0006-3495(93)81548-0,
+  Simson et al. 1995 doi:10.1016/S0006-3495(95)79972-6, both DOIs checked on Crossref; coefficients checked: 2.5117·ln10
+  = 5.783 = j01², the disc survival exponent, so the log is base 10). The old end-to-end/(Rg·√n) ratio is kept as
+  `calculate_confinement_ratio` ("legacy"). `confinement_threshold` (0.3) remains as an unused legacy attribute;
+  new attribute `confinement_level_threshold` = 3.16. Demo, seed 42: 200-frame tracks now 68 % correct (was 25 %, all
+  "confined"), confined class 25/25 with no false positives; 50-frame 61 % (was 49 %). Remaining errors are Brownian vs
+  sub/superdiffusive from the α thresholds. Simplification vs Simson: whole track, not sliding windows.
+- Web app: parameter `confinement_level_threshold`, columns `confinement_level` and `confinement_ratio_legacy`;
+  Populations/Validation/Method pages updated. All KIT checks re-run (pytest, node, screenshots static and server).
+- The 2026-11-11 open questions 1 and 2 are resolved by these fixes.

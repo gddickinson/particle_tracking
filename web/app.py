@@ -57,11 +57,11 @@ def demo_tracks(demo_id: str):
 async def analyze(file: UploadFile | None = File(None), demo: str = Form(""),
                   coord_unit: str = Form(""), pixel_size_um: str = Form(""), frame_interval_s: str = Form(""),
                   subdiffusion_threshold: str = Form(""), superdiffusion_threshold: str = Form(""),
-                  confinement_threshold: str = Form(""), directedness_threshold: str = Form("")):
+                  confinement_level_threshold: str = Form(""), directedness_threshold: str = Form("")):
     """Run MobilityAnalyzer on an uploaded track CSV (or a demo dataset) with the given units and thresholds."""
     form = dict(coord_unit=coord_unit, pixel_size_um=pixel_size_um, frame_interval_s=frame_interval_s,
                 subdiffusion_threshold=subdiffusion_threshold, superdiffusion_threshold=superdiffusion_threshold,
-                confinement_threshold=confinement_threshold, directedness_threshold=directedness_threshold)
+                confinement_level_threshold=confinement_level_threshold, directedness_threshold=directedness_threshold)
     try:
         p = parse_params(form)
         if file is not None and file.filename:

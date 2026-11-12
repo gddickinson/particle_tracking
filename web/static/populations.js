@@ -31,8 +31,11 @@ route('populations', async () => {
       <p class="small mute">Dashed: α thresholds (${p.subdiffusion_threshold}, ${p.superdiffusion_threshold}). Stacked by assigned class.</p></div>
     <div class="panel"><h3><span class="gk">α</span> against D</h3>${scatter(t.map(q => ({ x: num(q.D), y: num(q.alpha), c: q.mobility_class })), { xlabel: 'D (µm²/s)', ylabel: 'α', xlog: true, lines: { y: [p.subdiffusion_threshold, p.superdiffusion_threshold] } })}</div>
     <div class="panel"><h3>Directedness</h3>${histogram(t.map(q => ({ v: num(q.directedness), c: q.mobility_class })), { xlabel: 'directedness (end-to-end / path length)', range: [0, 1], bins: 20, marks: [{ x: p.directedness_threshold, label: 'directed' }] })}</div>
-    <div class="panel"><h3>Confinement ratio against track length</h3>${scatter(t.map(q => ({ x: q.track_length, y: num(q.confinement_ratio), c: q.mobility_class })), { xlabel: 'points in track', ylabel: 'confinement ratio', lines: { y: [p.confinement_threshold] }, curve: line, curveLabel: 'straight line of n points' })}
-      <p class="small mute">Dashed yellow: confined below ${p.confinement_threshold}. Dotted white: the ratio of a perfectly straight, evenly
-        spaced track, √(12(n−1)/(n+1))/√n. The ratio falls with track length for every kind of motion; see <a href="#/validate">Validation</a>.</p></div>
+    <div class="panel"><h3>Confinement level against track length</h3>${scatter(t.map(q => ({ x: q.track_length, y: num(q.confinement_level), c: q.mobility_class })), { xlabel: 'points in track', ylabel: 'confinement level −log10 ψ', lines: { y: [p.confinement_level_threshold] } })}
+      <p class="small mute">Dashed yellow: confined above ${p.confinement_level_threshold}. For free diffusion the level does not depend on
+        track length; for confined motion it grows with duration. See <a href="#/method">Method</a>.</p></div>
+    <div class="panel"><h3>Legacy ratio against track length</h3>${scatter(t.map(q => ({ x: q.track_length, y: num(q.confinement_ratio_legacy), c: q.mobility_class })), { xlabel: 'points in track', ylabel: 'end-to-end / (Rg √n)', lines: { y: [0.3] }, curve: line, curveLabel: 'straight line of n points' })}
+      <p class="small mute">The former criterion (confined below 0.3), kept for comparison only. Dotted white: a perfectly straight track,
+        √(12(n−1)/(n+1))/√n; the ratio falls as 1/√n for any motion, which is why it was replaced.</p></div>
   </div>`;
 });

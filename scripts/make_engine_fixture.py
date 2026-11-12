@@ -55,7 +55,7 @@ def main():
     csv = case_csv()
     df = read_tracks_csv(csv.encode())
     alt = {**DEFAULTS, "coord_unit": "um", "frame_interval_s": 0.05, "subdiffusion_threshold": 0.7,
-           "superdiffusion_threshold": 1.3, "confinement_threshold": 0.15, "directedness_threshold": 0.4}
+           "superdiffusion_threshold": 1.3, "confinement_level_threshold": 2.0, "directedness_threshold": 0.4}
     runs = [analyse(df, p, "cases.csv") for p in (dict(DEFAULTS), alt)]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"csv": csv, "runs": runs}, indent=0, allow_nan=False) + "\n")

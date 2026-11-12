@@ -48,17 +48,18 @@ export function provenance(r) {
 
 export const TRACK_COLUMNS = [
   ['particle', 'particle'], ['track_length', 'points'], ['D', 'D (µm²/s)'], ['alpha', 'α'],
-  ['directedness', 'directedness'], ['confinement_ratio', 'confinement ratio'], ['mobility_class', 'class'],
+  ['directedness', 'directedness'], ['confinement_level', 'confinement level'], ['confinement_ratio_legacy', 'legacy ratio'],
+  ['mobility_class', 'class'],
 ];
 
 export function trackCsv(r) {
   const head = ['particle', 'track_length', 'diffusion_coefficient_um2_per_s', 'anomalous_exponent', 'directedness',
-    'confinement_ratio', 'mobility_class'].concat(r.has_labels ? ['true_mobility'] : []);
+    'confinement_level', 'confinement_ratio_legacy', 'mobility_class'].concat(r.has_labels ? ['true_mobility'] : []);
   const q = s => (/[",\n]/.test(s) ? `"${String(s).replace(/"/g, '""')}"` : s);
   const rows = r.tracks.map(t => [q(t.particle), t.track_length, t.D ?? '', t.alpha ?? '', t.directedness ?? '',
-    t.confinement_ratio ?? '', t.mobility_class].concat(r.has_labels ? [q(t.true_mobility ?? '')] : []).join(','));
+    t.confinement_level ?? '', t.confinement_ratio_legacy ?? '', t.mobility_class].concat(r.has_labels ? [q(t.true_mobility ?? '')] : []).join(','));
   const p = r.params;
   const meta = `# ${r.name}; ${unitsText(p)}; thresholds: alpha < ${p.subdiffusion_threshold} sub, > ${p.superdiffusion_threshold} super, ` +
-    `confinement ratio < ${p.confinement_threshold}, directedness > ${p.directedness_threshold}; ${r.computed_by}`;
+    `confinement level > ${p.confinement_level_threshold}, directedness > ${p.directedness_threshold}; ${r.computed_by}`;
   return [meta, head.join(','), ...rows].join('\n') + '\n';
 }

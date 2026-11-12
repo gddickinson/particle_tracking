@@ -7,12 +7,6 @@ import { getInfo, getResult, sourceLine } from './state.js';
 
 const TRUE = ['brownian', 'confined', 'directed', 'subdiffusive', 'superdiffusive'];
 
-// Smallest n for which a straight, evenly spaced track of n points has a confinement ratio below thr.
-function lineLimit(thr) {
-  for (let n = 3; n < 100000; n++) if (Math.sqrt(12 * (n - 1) / (n + 1)) / Math.sqrt(n) < thr) return n;
-  return null;
-}
-
 route('validate', async () => {
   const [info, r] = await Promise.all([getInfo(), getResult()]);
   if (!r.has_labels) {
@@ -31,16 +25,13 @@ route('validate', async () => {
   <div id="cm"></div><p id="acc" class="small"></p>
     <div class="panel"><h3>Thresholds (live)</h3><div id="sl"></div>
       <p class="small mute">Moving a slider re-applies the class rule to the metrics already computed (α, directedness and the
-        confinement ratio do not depend on the thresholds). Use <a href="#/analyze">Analyze</a> to recompute everything.</p></div>
-  <h2>Why long tracks come out “confined”</h2>
-  <div class="callout"><p>The confinement test is <code>end-to-end / (Rg · √n) &lt; ${p.confinement_threshold}</code>
-    (<code>MobilityAnalyzer.calculate_confinement_ratio</code>), and it is checked before the other classes. Because of the √n,
-    the ratio shrinks as tracks get longer whatever the motion: a perfectly straight track of evenly spaced points has ratio
-    √(12(n−1)/(n+1))/√n, which is below the threshold from <b id="nline"></b> points on. The tracks here have
-    ${Math.min(...lengths)}–${Math.max(...lengths)} points. Compare the two demo datasets (50 and 200 frames) and the
-    “confinement ratio against track length” plot on <a href="#/populations">Populations</a>.</p>
-    <p class="small mute">This is how the code behaves today; whether the √n normalisation is intended is an open question for
-      the author, so the web app reproduces it unchanged.</p></div>`;
+        confinement level do not depend on the thresholds). Use <a href="#/analyze">Analyze</a> to recompute everything.</p></div>
+  <h2>The confinement criterion</h2>
+  <div class="callout a"><p>A track is confined when Saxton's probability ψ that a <em>free</em> random walker with the track's
+    initial-slope D would stay within the track's maximum excursion R for the whole track duration is tiny:
+    −log₁₀ψ = 2.5117·D·t/R² − 0.2048 &gt; ${p.confinement_level_threshold} (Saxton 1993; Simson et al. 1995; see
+    <a href="#/method">Method</a>). It replaced the former end-to-end / (Rg·√n) &lt; 0.3 ratio, which falls as 1/√n for any
+    motion and classed every track of the 200-frame demo as confined. The old ratio is still reported as “legacy ratio”.</p></div></div>`;
   const draw = () => {
     const rows = reclassify(r.tracks, p).filter(t => TRUE.includes(t.true_mobility));
     const pred = CLASSES.filter(c => rows.some(t => t.mobility_class === c));
@@ -52,11 +43,10 @@ route('validate', async () => {
           return `<td class="n"><span style="background:color-mix(in srgb, ${tr === pr ? 'var(--accent)' : 'var(--accent2)'} ${Math.round(a * 55)}%, transparent)">${k}</span></td>`; })}
           <td class="n">${pct(cell(tr, tr), n)}</td></tr>`; })}</tbody></table></div>`;
     $('#acc').innerHTML = `<b>${pct(hit, rows.length)}</b> of ${rows.length} tracks get the class they were simulated with.`;
-    $('#nline').textContent = lineLimit(p.confinement_threshold) ?? 'never';
   };
   const host = $('#sl');
   const sl = (id, label, min, max, step) => slider(host, { id, label, min, max, step, value: p[id], fmt: v => (+v).toFixed(2) }, v => { p[id] = v; draw(); });
-  sl('confinement_threshold', 'Confined below (confinement ratio)', 0, 1, 0.01);
+  sl('confinement_level_threshold', 'Confined above (confinement level)', 0, 10, 0.01);
   sl('directedness_threshold', 'Directed above (directedness)', 0, 1, 0.01);
   sl('subdiffusion_threshold', 'Subdiffusive below (α)', 0, 2, 0.01);
   sl('superdiffusion_threshold', 'Superdiffusive above (α)', 0, 2, 0.01);

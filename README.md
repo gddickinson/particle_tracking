@@ -243,10 +243,27 @@ MSD quantifies how far particles move over time:
 | Type | Description | Characteristics |
 |------|-------------|----------------|
 | **Brownian** | Normal random diffusion | α ≈ 1, linear MSD |
-| **Confined** | Trapped in domains | Plateau in MSD, small Rg |
+| **Confined** | Trapped in domains | Plateau in MSD; stays within a radius a free walker would very likely leave (see below) |
 | **Directed** | Active transport | High directedness, linear displacement |
 | **Subdiffusive** | Hindered diffusion | α < 0.9, anomalous MSD |
 | **Superdiffusive** | Enhanced spreading | α > 1.1, super-linear MSD |
+
+### Changes to the analysis (2026-11-12)
+
+These change classifications and numbers compared with earlier versions, by design:
+
+- **Confinement criterion.** A track is now confined when Saxton's probability ψ that a free random walker with the
+  track's initial-slope D (MSD frame lags 1–4) stays within the track's maximum excursion R for the track duration t is
+  below about 0.07 %: −log10 ψ = 2.5117·D·t/R² − 0.2048 > 3.16
+  (Saxton 1993, Biophys J 64:1766, [doi:10.1016/S0006-3495(93)81548-0](https://doi.org/10.1016/S0006-3495(93)81548-0);
+  threshold as in Simson, Sheets & Jacobson 1995, Biophys J 69:989,
+  [doi:10.1016/S0006-3495(95)79972-6](https://doi.org/10.1016/S0006-3495(95)79972-6), applied to the whole track).
+  The former test, end-to-end / (Rg·√n) < 0.3, falls as 1/√n for any motion: it classed every track of the simulator's
+  200-frame example as confined (a straight line from 132 points). It is kept as `calculate_confinement_ratio`
+  ("legacy ratio" in the web app) but no longer used. On the simulator's mixed population (seed 42) the confined class
+  now matches the simulated confined tracks exactly at 200 frames (25/25, no false positives).
+- **MSD lags are frame differences**, not row offsets, so tracks with gaps (trackpy `memory` > 0) get correct lag
+  times. Tracks without gaps are unchanged.
 
 ### Parameters to Optimize
 

@@ -20,6 +20,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mobility_analyzer import MobilityAnalyzer
+from tests.trajectory_simulator import TrajectorySimulator
 
 
 def _df(traj, pid=0, frames=None):
@@ -63,3 +64,48 @@ def test_complete_tracks_unchanged_by_frame_lags():
     d = a.calculate_diffusion_coefficients(_df(xy), pixel_size=1.0, fps=1.0)[0]
     msds = [np.mean(np.sum((xy[k:] - xy[:-k]) ** 2, axis=1)) for k in range(1, 11)]
     assert d == pytest.approx(np.polyfit(np.arange(1, 11), msds, 1)[0] / 4, rel=1e-9)
+
+
+# --- 2. length-independent confinement ------------------------------------------------------------
+
+def _fraction_confined(kind, n, count=60):
+    sim = TrajectorySimulator(seed=11)
+    trajs = []
+    for i in range(count):
+        if kind == "free":
+            trajs.append(sim.brownian_motion(n, D=1.0, dt=0.1))
+        elif kind == "confined":
+            trajs.append(sim.confined_diffusion(n, D=0.5, radius=0.5, dt=0.1))
+        else:
+            trajs.append(sim.directed_motion(n, velocity=1.0, D=0.1, dt=0.1))
+    tracks = pd.concat([_df(t, i) for i, t in enumerate(trajs)], ignore_index=True)
+    return MobilityAnalyzer().detect_confinement(tracks, pixel_size=1.0, fps=10.0).mean()
+
+
+@pytest.mark.parametrize("n", [50, 200])
+def test_free_diffusion_mostly_not_confined(n):
+    assert _fraction_confined("free", n) < 0.1
+
+
+@pytest.mark.parametrize("n", [50, 200])
+def test_confined_diffusion_detected(n):
+    assert _fraction_confined("confined", n) > 0.9
+
+
+@pytest.mark.parametrize("n", [50, 200])
+def test_directed_motion_not_confined(n):
+    assert _fraction_confined("directed", n) < 0.1
+
+
+@pytest.mark.parametrize("n", [30, 200, 1000])
+def test_straight_line_is_directed_not_confined(n):
+    a = MobilityAnalyzer()
+    line = _line(range(n))
+    assert not a.detect_confinement(line, pixel_size=0.1, fps=10.0)[0]
+    assert a.classify_mobility(line, pixel_size=0.1, fps=10.0)[0] == "directed"
+
+
+def test_legacy_ratio_still_available():
+    a = MobilityAnalyzer()
+    r = a.calculate_confinement_ratio(_line(range(10)), pixel_size=1.0)[0]
+    assert r == pytest.approx(np.sqrt(12 * 9 / 11) / np.sqrt(10), rel=1e-12)

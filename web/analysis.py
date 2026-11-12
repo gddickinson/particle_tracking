@@ -31,7 +31,7 @@ DEFAULTS = {
     "frame_interval_s": 0.1,         # 1 / fps, fps = 10 Hz is the get_mobility_summary default
     "subdiffusion_threshold": _A.subdiffusion_threshold,
     "superdiffusion_threshold": _A.superdiffusion_threshold,
-    "confinement_threshold": _A.confinement_threshold,
+    "confinement_level_threshold": _A.confinement_level_threshold,
     "directedness_threshold": _A.directedness_threshold,
 }
 D_FIT_LAGS = 10            # calculate_diffusion_coefficients(max_lagtime=10), as get_mobility_summary calls it
@@ -127,7 +127,7 @@ def analyzer_for(p) -> MobilityAnalyzer:
     a = MobilityAnalyzer()
     a.subdiffusion_threshold = p["subdiffusion_threshold"]
     a.superdiffusion_threshold = p["superdiffusion_threshold"]
-    a.confinement_threshold = p["confinement_threshold"]
+    a.confinement_level_threshold = p["confinement_level_threshold"]
     a.directedness_threshold = p["directedness_threshold"]
     return a
 
@@ -165,20 +165,22 @@ def ensemble(df: pd.DataFrame, classes: pd.Series, a: MobilityAnalyzer, pixel_si
 
 
 def analyse(df: pd.DataFrame, p: dict, name: str) -> dict:
-    """MobilityAnalyzer.get_mobility_summary on the table with parameters p, plus the confinement ratio and the
-    per-class ensemble MSD."""
+    """MobilityAnalyzer.get_mobility_summary on the table with parameters p, plus the confinement level (the
+    criterion), the legacy confinement ratio and the per-class ensemble MSD."""
     if df.empty:
         raise AnalysisError("The table has no rows.")
     pixel_size, fps = _scale(p)
     a = analyzer_for(p)
     s = a.get_mobility_summary(df, pixel_size, fps)
+    level = a.calculate_confinement_level(df, pixel_size, fps)
     ratio = a.calculate_confinement_ratio(df, pixel_size)
     labels = df.groupby("particle", sort=False)[LABEL_COLUMN].first() if LABEL_COLUMN in df.columns else None
     tracks = []
     for i, row in s.iterrows():
         t = {"particle": str(row["particle"]), "track_length": int(row["track_length"]),
              "D": clean(row["diffusion_coefficient"]), "alpha": clean(row["anomalous_exponent"]),
-             "directedness": clean(row["directedness"]), "confinement_ratio": clean(ratio[i]),
+             "directedness": clean(row["directedness"]), "confinement_level": clean(level[i]),
+             "confinement_ratio_legacy": clean(ratio[i]),
              "mobility_class": str(row["mobility_class"])}
         if labels is not None:
             t["true_mobility"] = str(labels[row["particle"]])

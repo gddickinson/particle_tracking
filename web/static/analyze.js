@@ -8,14 +8,14 @@ import { getInfo, getResult, setResult, sourceLine, tracksOf } from './state.js'
 const num = (id, label, unit, attrs, hint = '') => `<label for="${id}">${label} <span class="unit">${unit}</span></label>
   <input id="${id}" name="${id}" type="number" ${attrs}>${hint ? `<p class="hint">${hint}</p>` : ''}`;
 const KEYS = ['coord_unit', 'pixel_size_um', 'frame_interval_s', 'subdiffusion_threshold', 'superdiffusion_threshold',
-  'confinement_threshold', 'directedness_threshold'];
+  'confinement_level_threshold', 'directedness_threshold'];
 
 route('analyze', async () => {
   const [info, result] = await Promise.all([getInfo(), getResult()]);
   const d = info.defaults, cols = info.columns;
   app().innerHTML = `<p class="kicker">Run the analysis</p><h1>Analyze tracks</h1>
   <p class="lead">Per track: D from a linear fit of the first ${info.d_fit_lags} MSD points, α from a log-log fit,
-    directedness and a confinement ratio, then a class. ${isStatic() ? 'Runs in your browser.' : 'Runs <code>MobilityAnalyzer.get_mobility_summary</code> in Python.'}</p>
+    directedness and a confinement level (Saxton's probability of staying within the observed radius), then a class. ${isStatic() ? 'Runs in your browser.' : 'Runs <code>MobilityAnalyzer.get_mobility_summary</code> in Python.'}</p>
   <div class="side">
   <form class="params panel" id="pf" novalidate>
     <fieldset class="src"><legend>Data</legend>
@@ -35,7 +35,7 @@ route('analyze', async () => {
     <fieldset><legend>Class thresholds</legend>
       ${num('subdiffusion_threshold', 'Subdiffusive below', 'α', 'step="any"')}
       ${num('superdiffusion_threshold', 'Superdiffusive above', 'α', 'step="any"')}
-      ${num('confinement_threshold', 'Confined below', 'confinement ratio', 'min="0" step="any"')}
+      ${num('confinement_level_threshold', 'Confined above', 'confinement level −log₁₀ψ', 'step="any"', '3.16: Simson et al. 1995 (ψ ≈ 0.07 %).')}
       ${num('directedness_threshold', 'Directed above', 'directedness, 0–1', 'min="0" max="1" step="any"')}
     </fieldset>
     <button type="submit" id="run">Run analysis</button><button type="button" class="alt" id="reset">Default thresholds</button>

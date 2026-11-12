@@ -70,7 +70,7 @@ def _csv(df):
 def test_info_defaults_come_from_mobility_analyzer():
     d = client.get("/api/info").json()["defaults"]
     a = MobilityAnalyzer()
-    assert d["confinement_threshold"] == a.confinement_threshold
+    assert d["confinement_level_threshold"] == a.confinement_level_threshold == 3.16
     assert d["directedness_threshold"] == a.directedness_threshold
     assert d["subdiffusion_threshold"] == a.subdiffusion_threshold
     assert d["superdiffusion_threshold"] == a.superdiffusion_threshold
@@ -112,19 +112,18 @@ def test_upload_errors_and_gap_warning():
 
 
 def test_demo_with_other_thresholds():
-    r = client.post("/api/analyze", data={"demo": "mixed200", "confinement_threshold": "0.05"}).json()
-    assert r["params"]["confinement_threshold"] == 0.05 and r["coords_ref"] == "/demo/mixed200/tracks"
+    r = client.post("/api/analyze", data={"demo": "mixed200", "confinement_level_threshold": "50"}).json()
+    assert r["params"]["confinement_level_threshold"] == 50 and r["coords_ref"] == "/demo/mixed200/tracks"
     assert len({t["mobility_class"] for t in r["tracks"]}) > 1
 
 
-def test_straight_line_confined_from_132_points():
-    """Documents current MobilityAnalyzer behaviour quoted on the Validation page (confinement ratio ~ 1/sqrt(n)):
-    a straight, evenly spaced track is classed 'confined' from 132 points at the default threshold."""
-    def line(n):
-        return pd.DataFrame({"particle": 0, "frame": np.arange(n), "x": np.arange(n, dtype=float), "y": 0.0})
-    a = MobilityAnalyzer()
-    assert not a.detect_confinement(line(131))[0]
-    assert a.detect_confinement(line(132))[0]
+def test_demo200_confinement_matches_simulation():
+    """With the Saxton/Simson criterion, the 200-frame demo's confined class is the simulated confined tracks."""
+    r = client.get("/api/demo/mixed200/result").json()
+    pred = {t["particle"] for t in r["tracks"] if t["mobility_class"] == "confined"}
+    true = {t["particle"] for t in r["tracks"] if t["true_mobility"] == "confined"}
+    assert len(pred ^ true) <= 2 and len(true) == 25
+    assert all(t["confinement_ratio_legacy"] is not None for t in r["tracks"])
 
 
 def test_engine_fixture_is_current(tmp_path, monkeypatch):
@@ -137,9 +136,9 @@ def test_engine_fixture_is_current(tmp_path, monkeypatch):
     assert pd.read_csv(io.StringIO(new["csv"])).shape == pd.read_csv(io.StringIO(old["csv"])).shape
     for rn, ro in zip(new["runs"], old["runs"]):
         assert [t["mobility_class"] for t in rn["tracks"]] == [t["mobility_class"] for t in ro["tracks"]]
-        for k in ("D", "alpha", "directedness", "confinement_ratio"):
+        for k in ("D", "alpha", "directedness", "confinement_level", "confinement_ratio_legacy"):
             # the stationary edge track's ratio is 0/0 up to rounding (0 or NaN depending on libm): skip it
-            keep = [t["particle"] != "still" or k != "confinement_ratio" for t in ro["tracks"]]
+            keep = [t["particle"] != "still" or k != "confinement_ratio_legacy" for t in ro["tracks"]]
             a = np.array([np.nan if t[k] is None else t[k] for t, ok in zip(rn["tracks"], keep) if ok], float)
             b = np.array([np.nan if t[k] is None else t[k] for t, ok in zip(ro["tracks"], keep) if ok], float)
             np.testing.assert_allclose(a, b, rtol=1e-9, atol=1e-12, equal_nan=True, err_msg=k)

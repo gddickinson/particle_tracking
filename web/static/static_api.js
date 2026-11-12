@@ -16,7 +16,7 @@ export async function staticApi(path, body) {
 }
 
 const NUMS = ['pixel_size_um', 'frame_interval_s', 'subdiffusion_threshold', 'superdiffusion_threshold',
-  'confinement_threshold', 'directedness_threshold'];
+  'confinement_level_threshold', 'directedness_threshold'];
 
 async function analyze(fd) {
   const defaults = (await file('info')).defaults, p = { coord_unit: fd.get('coord_unit') || defaults.coord_unit };

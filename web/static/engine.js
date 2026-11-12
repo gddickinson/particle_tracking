@@ -1,5 +1,5 @@
 // Pure JS port of the repo's mobility analysis (mobility_analyzer.py, MobilityAnalyzer) as the web app calls it
-// (web/analysis.py): per-track diffusion coefficient, anomalous exponent, directedness, confinement ratio and class
+// (web/analysis.py): per-track diffusion coefficient, anomalous exponent, directedness, confinement level (and the legacy ratio) and class
 // (get_mobility_summary), and the per-class ensemble MSD (_calculate_msd_manual + fit_msd_model 'powerlaw').
 // engine.test.mjs checks it value by value against the Python code (tests/fixtures/engine_cases.json).
 //
@@ -77,7 +77,25 @@ export function directedness(x, y) {
   return p > 0 ? e / p : 0;
 }
 
-// calculate_confinement_ratio: end-to-end / (Rg * sqrt(n)), dimensionless.
+// mobility_metrics.confinement_level (Saxton 1993, doi:10.1016/S0006-3495(93)81548-0; Simson et al. 1995,
+// doi:10.1016/S0006-3495(95)79972-6): -log10 psi, log10 psi = 0.2048 - 2.5117 D t / R², D from MSD frame lags 1-4,
+// t = track duration, R = maximum distance from the first position. NaN if R = 0 or D undefined.
+export const CONFINEMENT_FIT_LAGS = 4;
+export function confinementLevel(frames, x, y, fps) {
+  if (x.length < 2) return NaN;
+  const { lags, msds } = frameMsd(frames, x, y, CONFINEMENT_FIT_LAGS);
+  if (msds.length < 3) return NaN;
+  const t = lags.map(l => l / fps), tm = mean(t), mm = mean(msds);
+  let sxy = 0, sxx = 0;
+  t.forEach((v, i) => { sxy += (v - tm) * (msds[i] - mm); sxx += (v - tm) ** 2; });
+  const D = sxy / sxx / 4, dur = (Math.round(frames[frames.length - 1]) - Math.round(frames[0])) / fps;
+  let r2 = 0;
+  for (let i = 0; i < x.length; i++) r2 = Math.max(r2, (x[i] - x[0]) ** 2 + (y[i] - y[0]) ** 2);
+  if (!Number.isFinite(D) || r2 === 0) return NaN;
+  return 2.5117 * D * dur / r2 - 0.2048;
+}
+
+// LEGACY calculate_confinement_ratio: end-to-end / (Rg * sqrt(n)), dimensionless (no longer used to classify).
 export function confinementRatio(x, y) {
   const n = x.length, xm = mean(x), ym = mean(y);
   let s = 0;
@@ -87,9 +105,9 @@ export function confinementRatio(x, y) {
 }
 
 // classify_mobility (order matters: unknown, confined, directed, sub-, superdiffusive, Brownian).
-export function classify(alpha, ratio, dir, p) {
+export function classify(alpha, level, dir, p) {
   if (Number.isNaN(alpha)) return 'unknown';
-  if (ratio < p.confinement_threshold) return 'confined';
+  if (level > p.confinement_level_threshold) return 'confined';
   if (dir > p.directedness_threshold) return 'directed';
   if (alpha < p.subdiffusion_threshold) return 'subdiffusive';
   if (alpha > p.superdiffusion_threshold) return 'superdiffusive';
@@ -172,9 +190,9 @@ export function trackMetrics(t, p) {
   const { pixelSize, fps } = scaleOf(p);
   const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize);
   const D = diffusionCoefficient(t.frames, x, y, fps), alpha = anomalousExponent(t.frames, x, y, fps);
-  const dir = directedness(x, y), ratio = confinementRatio(x, y);
+  const dir = directedness(x, y), level = confinementLevel(t.frames, x, y, fps), ratio = confinementRatio(x, y);
   const out = { particle: t.id, track_length: x.length, D: jsonNum(D), alpha: jsonNum(alpha), directedness: jsonNum(dir),
-    confinement_ratio: jsonNum(ratio), mobility_class: classify(alpha, ratio, dir, p) };
+    confinement_level: jsonNum(level), confinement_ratio_legacy: jsonNum(ratio), mobility_class: classify(alpha, level, dir, p) };
   if (t.label !== undefined) out.true_mobility = t.label;
   return out;
 }
@@ -237,8 +255,8 @@ export function tracksCsv(tracks) {
   return out.join('\n') + '\n';
 }
 
-// Re-apply the class rule with other thresholds to already computed metrics (alpha, ratio, directedness do not
+// Re-apply the class rule with other thresholds to already computed metrics (alpha, confinement level, directedness do not
 // depend on the thresholds), as the Validation page's threshold sliders do.
 export function reclassify(rows, p) {
-  return rows.map(r => ({ ...r, mobility_class: classify(num(r.alpha), num(r.confinement_ratio), num(r.directedness), p) }));
+  return rows.map(r => ({ ...r, mobility_class: classify(num(r.alpha), num(r.confinement_level), num(r.directedness), p) }));
 }
