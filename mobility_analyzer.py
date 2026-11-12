@@ -352,24 +352,20 @@ class MobilityAnalyzer:
         
         return np.array(alphas)
     
-    def detect_confinement(self, tracks: pd.DataFrame,
-                          pixel_size: float = 0.065) -> np.ndarray:
+    def calculate_confinement_ratio(self, tracks: pd.DataFrame,
+                                    pixel_size: float = 0.065) -> np.ndarray:
         """
-        Detect confined motion using radius of gyration
-        
-        Parameters
-        ----------
-        tracks : pd.DataFrame
-            Trajectories
-        pixel_size : float
-            Pixel size (microns)
-            
+        Confinement ratio of each trajectory (used by detect_confinement)
+
+        ratio = end-to-end distance / (Rg * sqrt(track_length)), with Rg the
+        radius of gyration. It is dimensionless (pixel_size cancels).
+
         Returns
         -------
-        is_confined : np.ndarray
-            Boolean array indicating confined motion
+        ratios : np.ndarray
+            One value per particle (NaN if Rg is 0)
         """
-        confinement = []
+        ratios = []
         
         for particle_id in tracks['particle'].unique():
             particle = tracks[tracks['particle'] == particle_id].sort_values('frame')
@@ -392,12 +388,31 @@ class MobilityAnalyzer:
             # Confined if Rg is small relative to trajectory length
             # and end-to-end distance is small
             track_length = len(particle)
-            confinement_ratio = end_to_end / (Rg * np.sqrt(track_length))
-            
-            is_confined = confinement_ratio < self.confinement_threshold
-            confinement.append(is_confined)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratios.append(end_to_end / (Rg * np.sqrt(track_length)))
         
-        return np.array(confinement)
+        return np.array(ratios, dtype=float)
+    
+    def detect_confinement(self, tracks: pd.DataFrame,
+                          pixel_size: float = 0.065) -> np.ndarray:
+        """
+        Detect confined motion using radius of gyration
+        
+        Parameters
+        ----------
+        tracks : pd.DataFrame
+            Trajectories
+        pixel_size : float
+            Pixel size (microns)
+            
+        Returns
+        -------
+        is_confined : np.ndarray
+            Boolean array indicating confined motion
+            (calculate_confinement_ratio < confinement_threshold)
+        """
+        ratios = self.calculate_confinement_ratio(tracks, pixel_size)
+        return ratios < self.confinement_threshold
     
     def calculate_directedness(self, tracks: pd.DataFrame,
                               pixel_size: float = 0.065) -> np.ndarray:
