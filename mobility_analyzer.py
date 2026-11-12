@@ -25,6 +25,8 @@ from scipy.stats import linregress
 from scipy.optimize import curve_fit
 from typing import Tuple, Dict, Optional
 
+from mobility_metrics import frame_msd, frame_span
+
 
 class MobilityAnalyzer:
     """
@@ -131,14 +133,10 @@ class MobilityAnalyzer:
             
             x = particle['x'].values * pixel_size
             y = particle['y'].values * pixel_size
-            n = len(x)
             
-            # Calculate MSD for different lag times
-            for lag in range(1, min(max_lagtime, n)):
-                dx = x[lag:] - x[:-lag]
-                dy = y[lag:] - y[:-lag]
-                msd_val = np.mean(dx**2 + dy**2)
-                
+            # MSD at lags measured in frames (gaps in the frame numbers allowed)
+            lags, values = frame_msd(particle['frame'].values, x, y, max_lagtime - 1)
+            for lag, msd_val in zip(lags, values):
                 msds.append({
                     'lagtime': lag * dt,
                     'msd': msd_val,
@@ -274,17 +272,12 @@ class MobilityAnalyzer:
             x = particle['x'].values * pixel_size
             y = particle['y'].values * pixel_size
             
-            # Use first few lag times for linear fit
-            msds = []
-            for lag in range(1, min(max_lagtime + 1, len(x))):
-                dx = x[lag:] - x[:-lag]
-                dy = y[lag:] - y[:-lag]
-                msd_val = np.mean(dx**2 + dy**2)
-                msds.append(msd_val)
+            # Use first few lag times (in frames) for linear fit
+            lags, msds = frame_msd(particle['frame'].values, x, y, max_lagtime)
             
             if len(msds) > 2:
                 # Linear fit: MSD = 4D*t
-                t = np.arange(1, len(msds) + 1) / fps
+                t = lags / fps
                 slope, intercept, r, p, stderr = linregress(t, msds)
                 D = slope / 4.0
                 diffusion_coeffs.append(D)
@@ -325,18 +318,11 @@ class MobilityAnalyzer:
             x = particle['x'].values * pixel_size
             y = particle['y'].values * pixel_size
             
-            # Calculate MSD
-            max_lag = min(len(x) // 2, 50)  # Use up to half the trajectory
-            msds = []
-            lags = []
-            
-            for lag in range(1, max_lag):
-                dx = x[lag:] - x[:-lag]
-                dy = y[lag:] - y[:-lag]
-                msd_val = np.mean(dx**2 + dy**2)
-                if msd_val > 0:
-                    msds.append(msd_val)
-                    lags.append(lag)
+            # Calculate MSD at frame lags up to half the trajectory
+            max_lag = min(frame_span(particle['frame'].values) // 2, 50)
+            lags, msds = frame_msd(particle['frame'].values, x, y, max_lag - 1)
+            keep = msds > 0
+            lags, msds = lags[keep], msds[keep]
             
             if len(msds) > 5:
                 # Log-log fit: log(MSD) = log(Γ) + α*log(t)

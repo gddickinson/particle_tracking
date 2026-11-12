@@ -93,8 +93,8 @@ function show(r) {
   $('#out').innerHTML = `${provenance(r)}
   <p class="small mute">${esc(sourceLine(r))}<br>${esc(unitsText(p))}</p>
   <div class="tiles">${list(present.slice(0, 6), c => `<div class="tile" style="border-left-color:${COLORS[c]}"><b>${by(c).length}</b><span>${cls(c)} ${pct(by(c).length, n)}</span></div>`)}</div>
-  ${w.tracks_with_gaps || w.tracks_with_repeated_frames ? `<p class="callout small">${w.tracks_with_gaps} tracks have gaps in their frame numbers and ${w.tracks_with_repeated_frames} repeat a frame.
-    MobilityAnalyzer counts MSD lags in rows of a track (sorted by frame), not in frames, so lag times of these tracks are not exact.</p>` : ''}
+  ${w.tracks_with_gaps ? `<p class="small mute">${w.tracks_with_gaps} tracks have gaps in their frame numbers; MSD lags are frame differences, so their lag times are correct.</p>` : ''}
+  ${w.tracks_with_repeated_frames ? `<p class="callout small">${w.tracks_with_repeated_frames} tracks repeat a frame number: only the first localisation of a repeated frame is used for the MSD.</p>` : ''}
   <div class="scroll"><table class="tbl"><thead><tr><th>class</th><th>tracks</th><th>median D <span class="unit">µm²/s</span></th><th>median α</th>
     <th>ensemble D <span class="unit">µm²/s</span></th><th>ensemble α</th><th>median points</th></tr></thead><tbody>
     ${list(present, c => { const t = by(c), e = r.ensemble[c]?.fit || {};

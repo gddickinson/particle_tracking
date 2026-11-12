@@ -4,7 +4,8 @@
 // engine.test.mjs checks it value by value against the Python code (tests/fixtures/engine_cases.json).
 //
 // Units: x / y in pixels (pixel_size_um, µm/pixel) or in µm; frame_interval_s in seconds; fps = 1 / frame_interval_s.
-// As in MobilityAnalyzer, MSD lags count rows of a track sorted by frame (gaps in the frame numbers are not used).
+// As in MobilityAnalyzer (mobility_metrics.frame_msd), MSD lags are frame differences, so tracks with gaps get
+// correct lag times.
 
 export const CLASSES = ['brownian', 'confined', 'directed', 'subdiffusive', 'superdiffusive', 'unknown'];
 export const D_FIT_LAGS = 10, ENSEMBLE_MAX_LAG = 100;
@@ -33,30 +34,38 @@ export function linregress(x, y) {
   return { slope, intercept: ym - slope * xm, r };
 }
 
-// Time-averaged MSD of one track (µm²) at lags 1..maxLag in rows.
-export function msdAt(x, y, lag) {
-  let s = 0;
-  const m = x.length - lag;
-  for (let i = 0; i < m; i++) { const dx = x[i + lag] - x[i], dy = y[i + lag] - y[i]; s += dx * dx + dy * dy; }
-  return s / m;
-}
-
-// calculate_diffusion_coefficients: linear fit MSD = 4 D t over lags 1..10 (needs > 2 lags).
-export function diffusionCoefficient(x, y, fps, maxLag = D_FIT_LAGS) {
-  const msds = [];
-  for (let lag = 1; lag < Math.min(maxLag + 1, x.length); lag++) msds.push(msdAt(x, y, lag));
-  if (msds.length <= 2) return NaN;
-  const t = msds.map((_, i) => (i + 1) / fps);
-  return linregress(t, msds).slope / 4;
-}
-
-// calculate_anomalous_exponent: log-log fit over lags 1..min(n//2, 50)-1 with MSD > 0 (needs > 5 lags).
-export function anomalousExponent(x, y, fps) {
-  const maxLag = Math.min(Math.floor(x.length / 2), 50), lt = [], lm = [];
-  for (let lag = 1; lag < maxLag; lag++) {
-    const m = msdAt(x, y, lag);
-    if (m > 0) { lt.push(Math.log(lag / fps)); lm.push(Math.log(m)); }
+// mobility_metrics.frame_msd: time-averaged MSD (µm²) at frame lags 1..maxLag over all pairs exactly `lag` frames
+// apart (frames sorted ascending; a repeated frame keeps its first localisation). Returns {lags, msds}.
+export function frameMsd(frames, x, y, maxLag) {
+  const out = { lags: [], msds: [] };
+  if (!frames.length) return out;
+  const f = frames.map(Math.round), f0 = f[0], span = f[f.length - 1] - f0;
+  const X = new Float64Array(span + 1).fill(NaN), Y = new Float64Array(span + 1).fill(NaN);
+  f.forEach((v, i) => { if (Number.isNaN(X[v - f0])) { X[v - f0] = x[i]; Y[v - f0] = y[i]; } });
+  for (let lag = 1; lag <= Math.min(maxLag, span); lag++) {
+    let s = 0, k = 0;
+    for (let i = 0; i + lag <= span; i++) {
+      const dx = X[i + lag] - X[i], dy = Y[i + lag] - Y[i], d = dx * dx + dy * dy;
+      if (!Number.isNaN(d)) { s += d; k++; }
+    }
+    if (k) { out.lags.push(lag); out.msds.push(s / k); }
   }
+  return out;
+}
+export const frameSpan = frames => (frames.length ? Math.round(frames[frames.length - 1]) - Math.round(frames[0]) + 1 : 0);
+
+// calculate_diffusion_coefficients: linear fit MSD = 4 D t over frame lags 1..10 (needs > 2 lags).
+export function diffusionCoefficient(frames, x, y, fps, maxLag = D_FIT_LAGS) {
+  const { lags, msds } = frameMsd(frames, x, y, maxLag);
+  if (msds.length <= 2) return NaN;
+  return linregress(lags.map(l => l / fps), msds).slope / 4;
+}
+
+// calculate_anomalous_exponent: log-log fit over frame lags 1..min(span//2, 50)-1 with MSD > 0 (needs > 5 lags).
+export function anomalousExponent(frames, x, y, fps) {
+  const maxLag = Math.min(Math.floor(frameSpan(frames) / 2), 50), lt = [], lm = [];
+  const { lags, msds } = frameMsd(frames, x, y, maxLag - 1);
+  lags.forEach((lag, i) => { if (msds[i] > 0) { lt.push(Math.log(lag / fps)); lm.push(Math.log(msds[i])); } });
   return lm.length > 5 ? linregress(lt, lm).slope : NaN;
 }
 
@@ -147,11 +156,12 @@ export function ensembleMsd(tracks, pixelSize, fps, maxLag = ENSEMBLE_MAX_LAG) {
   const dt = 1 / fps, sums = new Map();
   for (const t of tracks) {
     const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize);
-    for (let lag = 1; lag < Math.min(maxLag, x.length); lag++) {
+    const m = frameMsd(t.frames, x, y, maxLag - 1);
+    m.lags.forEach((lag, i) => {
       const key = lag * dt, e = sums.get(key) || [0, 0];
-      e[0] += msdAt(x, y, lag); e[1]++;
+      e[0] += m.msds[i]; e[1]++;
       sums.set(key, e);
-    }
+    });
   }
   const lags = [...sums.keys()].sort((a, b) => a - b);
   return { lags, msds: lags.map(k => sums.get(k)[0] / sums.get(k)[1]) };
@@ -161,7 +171,7 @@ export function ensembleMsd(tracks, pixelSize, fps, maxLag = ENSEMBLE_MAX_LAG) {
 export function trackMetrics(t, p) {
   const { pixelSize, fps } = scaleOf(p);
   const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize);
-  const D = diffusionCoefficient(x, y, fps), alpha = anomalousExponent(x, y, fps);
+  const D = diffusionCoefficient(t.frames, x, y, fps), alpha = anomalousExponent(t.frames, x, y, fps);
   const dir = directedness(x, y), ratio = confinementRatio(x, y);
   const out = { particle: t.id, track_length: x.length, D: jsonNum(D), alpha: jsonNum(alpha), directedness: jsonNum(dir),
     confinement_ratio: jsonNum(ratio), mobility_class: classify(alpha, ratio, dir, p) };

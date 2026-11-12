@@ -2,7 +2,7 @@
 MobilityAnalyzer) returns for them, so static/engine.test.mjs can check the JS port value by value.
 
 Cases: tracks from the repo's TrajectorySimulator (seed 7, all five motion models, rows shuffled so the per-track
-order and frame sorting are exercised) plus edge tracks (too short for alpha, stationary, a straight line), analysed
+order and frame sorting are exercised) plus edge tracks (too short for alpha, stationary, a straight line, a track with frame gaps), analysed
 with the default units/thresholds and with other units/thresholds.
 
 Run: python scripts/make_engine_fixture.py  (tests/test_web.py checks the committed file is current)
@@ -23,6 +23,14 @@ from web.analysis import DEFAULTS, analyse, read_tracks_csv  # noqa: E402
 OUT = ROOT / "tests" / "fixtures" / "engine_cases.json"
 
 
+def gappy() -> pd.DataFrame:
+    """A Brownian track with missing frames (as trackpy memory > 0 produces): lags must be frame differences."""
+    rng = np.random.default_rng(13)
+    xy = np.cumsum(rng.normal(0, 3.0, size=(60, 2)), axis=0)
+    keep = np.sort(rng.choice(60, size=42, replace=False))
+    return pd.DataFrame({"particle": "gappy", "frame": keep, "x": xy[keep, 0], "y": xy[keep, 1]})
+
+
 def case_csv() -> str:
     sim = TrajectorySimulator(seed=7)
     df = sim.generate_mixed_population(40, 60, dt=0.1, pixel_size=0.065)
@@ -32,6 +40,7 @@ def case_csv() -> str:
                       "y": [1.0, 1.5, 1.2, 2.0, 2.2]}),
         pd.DataFrame({"particle": "still", "frame": np.arange(20), "x": 7.0, "y": 9.0}),
         pd.DataFrame({"particle": "line", "frame": np.arange(30), "x": 3.0 + 0.5 * np.arange(30), "y": 4.0}),
+        gappy(),
     ]
     for e in extra:
         e["true_mobility"] = "edge"

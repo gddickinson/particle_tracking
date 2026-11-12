@@ -16,3 +16,9 @@
   2. MSD lags are counted in rows, not frames, so tracks with gaps (trackpy memory > 0) get wrong lag times. The web
      app warns when a file has gaps.
 - `mobility_analyzer.py` was already over 500 lines (578, now 593); not split in this session.
+
+## 2026-11-12: analysis fixes requested by George ("fix any other problems")
+- **Fix: MSD lags are frame differences** (`mobility_metrics.frame_msd`, used by `calculate_diffusion_coefficients`,
+  `calculate_anomalous_exponent`, `_calculate_msd_manual`; engine.js mirrors it). Tracks with gaps in their frame
+  numbers (trackpy memory > 0) now get correct lag times; their D and α change. Tracks without gaps give the same
+  numbers as before. A repeated frame keeps its first localisation. Tests: `tests/test_mobility_fixes.py`.

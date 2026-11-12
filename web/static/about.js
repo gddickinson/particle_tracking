@@ -15,11 +15,12 @@ route('method', async () => {
     MSD in µm². α, directedness and the confinement ratio are dimensionless. Only displacements are used, so the
     coordinate origin (pixel centre or corner) does not matter. The units travel with the results (CSV header line, JSON).</p>
   <h2>Per-track quantities</h2>
-  <p>Each track is sorted by frame. The time-averaged MSD at a lag of k rows is the mean of (Δx² + Δy²) over all pairs k rows apart.</p>
+  <p>Each track is sorted by frame. The time-averaged MSD at a lag of k frames is the mean of (Δx² + Δy²) over all pairs of
+    localisations exactly k frames apart (<code>mobility_metrics.frame_msd</code>), so tracks with gaps (trackpy memory) get correct lag times.</p>
   <ul>
     <li><b>D</b> (<code>calculate_diffusion_coefficients</code>): linear regression of MSD against t over lags 1–${info.d_fit_lags};
       D = slope / 4 (MSD = 4Dt in 2D; the intercept, e.g. localisation error, is fitted and then ignored). Needs at least 4 points.</li>
-    <li><b>α</b> (<code>calculate_anomalous_exponent</code>): slope of log MSD against log t over lags 1 to min(n/2, 50) − 1,
+    <li><b>α</b> (<code>calculate_anomalous_exponent</code>): slope of log MSD against log t over frame lags 1 to min(span/2, 50) − 1 (span = frames covered by the track),
       using lags with MSD &gt; 0. Needs more than 5 such lags, i.e. about 14 points; otherwise the track is “unknown”.</li>
     <li><b>Directedness</b> (<code>calculate_directedness</code>): end-to-end distance / path length, from 0 (returns to start) to 1 (straight).</li>
     <li><b>Confinement ratio</b> (<code>calculate_confinement_ratio</code>, used by <code>detect_confinement</code>):
@@ -35,8 +36,7 @@ route('method', async () => {
     <li>${cls('brownian')}: otherwise.</li>
   </ol>
   <p class="small mute">All four thresholds can be changed on the Analyze page. Known behaviour: the confinement ratio falls as
-    1/√n for any motion, so long tracks are classed as confined (see <a href="#/validate">Validation</a>); MSD lags are counted in
-    rows, so frame gaps from trackpy's memory parameter are not taken into account (the Analyze page warns when a file has gaps).</p>
+    1/√n for any motion, so long tracks are classed as confined (see <a href="#/validate">Validation</a>).</p>
   <h2>Ensemble MSD</h2>
   <p>Per class, the mean of the per-track MSD curves over the tracks that reach each lag (lags up to ${info.ensemble_max_lag - 1}),
     as <code>_calculate_msd_manual</code>, fitted with <code>fit_msd_model(…, 'powerlaw')</code>: log MSD = log(4D) + α log t.

@@ -133,7 +133,8 @@ def analyzer_for(p) -> MobilityAnalyzer:
 
 
 def frame_warnings(df: pd.DataFrame) -> dict:
-    """Tracks whose frames are not consecutive or repeat. MobilityAnalyzer takes lags in rows, not frames."""
+    """Tracks whose frames are not consecutive (handled: MSD lags are frame differences) or repeat a frame
+    (only the first localisation of a repeated frame enters the MSD)."""
     gaps = dup = 0
     for _, g in df.groupby("particle", sort=False):
         d = np.diff(np.sort(g["frame"].to_numpy()))

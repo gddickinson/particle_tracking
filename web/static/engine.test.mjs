@@ -2,7 +2,7 @@
 // Fixture: tests/fixtures/engine_cases.json (scripts/make_engine_fixture.py). Run: node web/static/engine.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { analyse, checkParams, classify, confinementRatio, num, parseCsv, toTracks, tracksCsv } from './engine.js';
+import { analyse, checkParams, classify, confinementRatio, diffusionCoefficient, frameMsd, num, parseCsv, toTracks, tracksCsv } from './engine.js';
 
 const fx = JSON.parse(readFileSync(new URL('../../tests/fixtures/engine_cases.json', import.meta.url), 'utf8'));
 const close = (a, b, what, tol = 1e-9) => {
@@ -54,6 +54,11 @@ for (const n of [10, 50, 200]) {
   const xs = Array.from({ length: n }, (_, i) => i), ys = xs.map(() => 0);
   close(confinementRatio(xs, ys), Math.sqrt(12 * (n - 1) / (n + 1)) / Math.sqrt(n), `line ratio n=${n}`); checks++;
 }
+// Frame lags: a constant-speed line with missing frames has MSD = lag² and the same D as the complete line.
+const gapF = [0, 1, 2, 4, 5, 7, 8, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 24];
+const fullF = Array.from({ length: 25 }, (_, i) => i);
+assert.deepEqual(frameMsd(gapF, gapF, gapF.map(() => 0), 4).msds, [1, 4, 9, 16]);
+close(diffusionCoefficient(gapF, gapF, gapF.map(() => 0), 1), diffusionCoefficient(fullF, fullF, fullF.map(() => 0), 1), 'gapped line D'); checks++;
 // CSV round trip, quoting and errors.
 const again = toTracks(parseCsv(tracksCsv(tracks)));
 assert.deepEqual(again.map(t => t.id), tracks.map(t => t.id));

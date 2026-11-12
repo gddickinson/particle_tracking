@@ -2,7 +2,7 @@
 // its MSD curve and the two fits behind D and α).
 import { $, $$, app, esc, list, route } from './core.js';
 import { drawMap, msdPlot, trackSvg } from './charts.js';
-import { linregress, msdAt, num, scaleOf } from './engine.js';
+import { frameMsd, frameSpan, linregress, num, scaleOf } from './engine.js';
 import { COLORS, TRACK_COLUMNS, TRUE_NAMES, cls, f, legend, provenance } from './fmt.js';
 import { getResult, sourceLine, tracksOf } from './state.js';
 
@@ -74,12 +74,11 @@ function detail(r, tracks, id) {
   if (!t || !m) { $('#detail').innerHTML = '<p class="mute">No track selected.</p>'; return; }
   const { pixelSize, fps } = scaleOf(r.params);
   const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize), n = x.length;
-  const lags = [], msd = [];
-  for (let lag = 1; lag < Math.max(2, Math.min(Math.floor(n / 2), 50)); lag++) { if (lag >= n) break; lags.push(lag / fps); msd.push(msdAt(x, y, lag)); }
+  const am = frameMsd(t.frames, x, y, Math.max(1, Math.min(Math.floor(frameSpan(t.frames) / 2), 50) - 1));
+  const lags = am.lags.map(l => l / fps), msd = am.msds;
   const fits = [];
-  const dl = [], dm = [];
-  for (let lag = 1; lag < Math.min(r.d_fit_lags + 1, n); lag++) { dl.push(lag / fps); dm.push(msdAt(x, y, lag)); }
-  if (dl.length > 2) { const L = linregress(dl, dm); fits.push({ name: `linear fit, lags 1–${dl.length}: slope ${f(L.slope)} µm²/s = 4D`, color: '#ffd23f', range: [dl[0], dl[dl.length - 1]], fn: s => L.slope * s + L.intercept }); }
+  const dmf = frameMsd(t.frames, x, y, r.d_fit_lags), dl = dmf.lags.map(l => l / fps), dm = dmf.msds;
+  if (dl.length > 2) { const L = linregress(dl, dm); fits.push({ name: `linear fit, frame lags 1–${dmf.lags[dmf.lags.length - 1]}: slope ${f(L.slope)} µm²/s = 4D`, color: '#ffd23f', range: [dl[0], dl[dl.length - 1]], fn: s => L.slope * s + L.intercept }); }
   const pos = lags.map((l, i) => [l, msd[i]]).filter(([, v]) => v > 0);
   if (pos.length > 5) { const P = linregress(pos.map(p => Math.log(p[0])), pos.map(p => Math.log(p[1]))); fits.push({ name: `log-log fit: slope α = ${f(P.slope, 3)}`, color: '#ff4fd8', fn: s => Math.exp(P.intercept) * s ** P.slope }); }
   $('#detail').innerHTML = `<h3>Track ${esc(id)} · ${cls(m.mobility_class)}${m.true_mobility ? ` <span class="small mute">simulated as ${esc(TRUE_NAMES[m.true_mobility] || m.true_mobility)}</span>` : ''}</h3>
