@@ -1,0 +1,234 @@
+// Pure JS port of the repo's mobility analysis (mobility_analyzer.py, MobilityAnalyzer) as the web app calls it
+// (web/analysis.py): per-track diffusion coefficient, anomalous exponent, directedness, confinement ratio and class
+// (get_mobility_summary), and the per-class ensemble MSD (_calculate_msd_manual + fit_msd_model 'powerlaw').
+// engine.test.mjs checks it value by value against the Python code (tests/fixtures/engine_cases.json).
+//
+// Units: x / y in pixels (pixel_size_um, µm/pixel) or in µm; frame_interval_s in seconds; fps = 1 / frame_interval_s.
+// As in MobilityAnalyzer, MSD lags count rows of a track sorted by frame (gaps in the frame numbers are not used).
+
+export const CLASSES = ['brownian', 'confined', 'directed', 'subdiffusive', 'superdiffusive', 'unknown'];
+export const D_FIT_LAGS = 10, ENSEMBLE_MAX_LAG = 100;
+export const COLUMNS = {
+  particle: ['particle', 'track_id', 'track_number', 'track', 'TRACK_ID', 'id'],
+  frame: ['frame', 'FRAME', 't', 'frame_number'],
+  x: ['x', 'POSITION_X', 'x_um', 'x [px]'],
+  y: ['y', 'POSITION_Y', 'y_um', 'y [px]'],
+};
+export const LABEL_COLUMN = 'true_mobility';
+
+// JSON numbers: null = NaN.
+export const num = v => (v === null || v === undefined ? NaN : v);
+const jsonNum = v => (Number.isFinite(v) ? v : null);
+const mean = a => { let s = 0; for (const v of a) s += v; return s / a.length; };
+
+// scipy.stats.linregress (slope, intercept, r)
+export function linregress(x, y) {
+  const n = x.length, xm = mean(x), ym = mean(y);
+  let sxx = 0, sxy = 0, syy = 0;
+  for (let i = 0; i < n; i++) { const dx = x[i] - xm, dy = y[i] - ym; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; }
+  sxx /= n; sxy /= n; syy /= n;
+  const slope = sxy / sxx;
+  let r = sxx === 0 || syy === 0 ? 0 : sxy / Math.sqrt(sxx * syy);
+  r = Math.max(-1, Math.min(1, r));
+  return { slope, intercept: ym - slope * xm, r };
+}
+
+// Time-averaged MSD of one track (µm²) at lags 1..maxLag in rows.
+export function msdAt(x, y, lag) {
+  let s = 0;
+  const m = x.length - lag;
+  for (let i = 0; i < m; i++) { const dx = x[i + lag] - x[i], dy = y[i + lag] - y[i]; s += dx * dx + dy * dy; }
+  return s / m;
+}
+
+// calculate_diffusion_coefficients: linear fit MSD = 4 D t over lags 1..10 (needs > 2 lags).
+export function diffusionCoefficient(x, y, fps, maxLag = D_FIT_LAGS) {
+  const msds = [];
+  for (let lag = 1; lag < Math.min(maxLag + 1, x.length); lag++) msds.push(msdAt(x, y, lag));
+  if (msds.length <= 2) return NaN;
+  const t = msds.map((_, i) => (i + 1) / fps);
+  return linregress(t, msds).slope / 4;
+}
+
+// calculate_anomalous_exponent: log-log fit over lags 1..min(n//2, 50)-1 with MSD > 0 (needs > 5 lags).
+export function anomalousExponent(x, y, fps) {
+  const maxLag = Math.min(Math.floor(x.length / 2), 50), lt = [], lm = [];
+  for (let lag = 1; lag < maxLag; lag++) {
+    const m = msdAt(x, y, lag);
+    if (m > 0) { lt.push(Math.log(lag / fps)); lm.push(Math.log(m)); }
+  }
+  return lm.length > 5 ? linregress(lt, lm).slope : NaN;
+}
+
+// calculate_directedness: end-to-end distance / path length (0 if the path length is 0).
+export function directedness(x, y) {
+  const n = x.length, e = Math.sqrt((x[n - 1] - x[0]) ** 2 + (y[n - 1] - y[0]) ** 2);
+  let p = 0;
+  for (let i = 1; i < n; i++) p += Math.sqrt((x[i] - x[i - 1]) ** 2 + (y[i] - y[i - 1]) ** 2);
+  return p > 0 ? e / p : 0;
+}
+
+// calculate_confinement_ratio: end-to-end / (Rg * sqrt(n)), dimensionless.
+export function confinementRatio(x, y) {
+  const n = x.length, xm = mean(x), ym = mean(y);
+  let s = 0;
+  for (let i = 0; i < n; i++) s += (x[i] - xm) ** 2 + (y[i] - ym) ** 2;
+  const rg = Math.sqrt(s / n), e = Math.sqrt((x[n - 1] - x[0]) ** 2 + (y[n - 1] - y[0]) ** 2);
+  return e / (rg * Math.sqrt(n));
+}
+
+// classify_mobility (order matters: unknown, confined, directed, sub-, superdiffusive, Brownian).
+export function classify(alpha, ratio, dir, p) {
+  if (Number.isNaN(alpha)) return 'unknown';
+  if (ratio < p.confinement_threshold) return 'confined';
+  if (dir > p.directedness_threshold) return 'directed';
+  if (alpha < p.subdiffusion_threshold) return 'subdiffusive';
+  if (alpha > p.superdiffusion_threshold) return 'superdiffusive';
+  return 'brownian';
+}
+
+export function scaleOf(p) {
+  return { pixelSize: p.coord_unit === 'um' ? 1 : p.pixel_size_um, fps: 1 / p.frame_interval_s };
+}
+
+// Tracks in the order of first appearance, each sorted by frame: [{id, frames, xs, ys, label}] (table units).
+export function toTracks(table) {
+  const idx = {};
+  for (const [std, names] of Object.entries(COLUMNS)) {
+    const hit = names.find(n => table.columns.includes(n));
+    if (hit !== undefined) idx[std] = table.columns.indexOf(hit);
+  }
+  const missing = Object.keys(COLUMNS).filter(k => idx[k] === undefined);
+  if (missing.length) throw new Error(`Missing required columns: ${missing.join(', ')} (found: ${table.columns.join(', ')})`);
+  const li = table.columns.indexOf(LABEL_COLUMN);
+  const numv = s => (s === undefined || String(s).trim() === '' ? NaN : Number(s));
+  const map = new Map();
+  for (const row of table.rows) {
+    const fr = numv(row[idx.frame]), x = numv(row[idx.x]), y = numv(row[idx.y]);
+    if (Number.isNaN(fr) || Number.isNaN(x) || Number.isNaN(y)) continue;
+    const id = String(row[idx.particle]);
+    if (!map.has(id)) map.set(id, { id, pts: [], label: li >= 0 ? String(row[li]) : undefined });
+    map.get(id).pts.push([fr, x, y]);
+  }
+  if (!map.size) throw new Error('No rows with numeric frame, x and y values.');
+  return [...map.values()].map(t => {
+    t.pts.sort((a, b) => a[0] - b[0]);
+    return { id: t.id, label: t.label, frames: t.pts.map(q => q[0]), xs: t.pts.map(q => q[1]), ys: t.pts.map(q => q[2]) };
+  });
+}
+
+// Coordinates object as returned by the API ({id: [frames, xs, ys]}) -> track list.
+export function fromCoords(coords, labels = null) {
+  return Object.entries(coords).map(([id, [frames, xs, ys]]) => ({ id, frames, xs, ys, label: labels ? labels[id] : undefined }));
+}
+export const toCoords = tracks => Object.fromEntries(tracks.map(t => [t.id, [t.frames, t.xs, t.ys]]));
+
+export function frameWarnings(tracks) {
+  let gaps = 0, dup = 0;
+  for (const t of tracks) {
+    let g = false, d = false;
+    for (let i = 1; i < t.frames.length; i++) { const s = t.frames[i] - t.frames[i - 1]; if (s === 0) d = true; if (s > 1) g = true; }
+    gaps += g; dup += d;
+  }
+  return { tracks_with_gaps: gaps, tracks_with_repeated_frames: dup };
+}
+
+// fit_msd_model(msd, 'powerlaw'): MSD = 4 D t^alpha by a log-log line (needs >= 3 valid points).
+export function fitPowerLaw(lags, msds) {
+  const t = [], m = [];
+  lags.forEach((v, i) => { if (msds[i] > 0 && v > 0) { t.push(Math.log(v)); m.push(Math.log(msds[i])); } });
+  if (t.length < 3) return { D: NaN, alpha: NaN, r_squared: NaN };
+  const r = linregress(t, m);
+  return { D: Math.exp(r.intercept) / 4, alpha: r.slope, r_squared: r.r * r.r };
+}
+
+// _calculate_msd_manual: per-track MSD at lags 1..min(maxLag, n)-1, averaged over the tracks reaching each lag.
+export function ensembleMsd(tracks, pixelSize, fps, maxLag = ENSEMBLE_MAX_LAG) {
+  const dt = 1 / fps, sums = new Map();
+  for (const t of tracks) {
+    const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize);
+    for (let lag = 1; lag < Math.min(maxLag, x.length); lag++) {
+      const key = lag * dt, e = sums.get(key) || [0, 0];
+      e[0] += msdAt(x, y, lag); e[1]++;
+      sums.set(key, e);
+    }
+  }
+  const lags = [...sums.keys()].sort((a, b) => a - b);
+  return { lags, msds: lags.map(k => sums.get(k)[0] / sums.get(k)[1]) };
+}
+
+// Per-track metrics for one track (µm, s).
+export function trackMetrics(t, p) {
+  const { pixelSize, fps } = scaleOf(p);
+  const x = t.xs.map(v => v * pixelSize), y = t.ys.map(v => v * pixelSize);
+  const D = diffusionCoefficient(x, y, fps), alpha = anomalousExponent(x, y, fps);
+  const dir = directedness(x, y), ratio = confinementRatio(x, y);
+  const out = { particle: t.id, track_length: x.length, D: jsonNum(D), alpha: jsonNum(alpha), directedness: jsonNum(dir),
+    confinement_ratio: jsonNum(ratio), mobility_class: classify(alpha, ratio, dir, p) };
+  if (t.label !== undefined) out.true_mobility = t.label;
+  return out;
+}
+
+// The whole analysis, same JSON shape as web/analysis.py analyse().
+export function analyse(tracks, p, name = 'tracks.csv') {
+  if (!tracks.length) throw new Error('The table has no rows.');
+  const rows = tracks.map(t => trackMetrics(t, p));
+  const { pixelSize, fps } = scaleOf(p), ensemble = {};
+  for (const c of CLASSES) {
+    const sub = tracks.filter((_, i) => rows[i].mobility_class === c);
+    if (!sub.length) continue;
+    const e = ensembleMsd(sub, pixelSize, fps);
+    if (!e.lags.length) continue;
+    const fit = fitPowerLaw(e.lags, e.msds);
+    ensemble[c] = { n_tracks: sub.length, lag_s: e.lags, msd_um2: e.msds.map(jsonNum),
+      fit: { D: jsonNum(fit.D), alpha: jsonNum(fit.alpha), r_squared: jsonNum(fit.r_squared) } };
+  }
+  return { name, params: { ...p }, computed_by: 'browser', n_rows: tracks.reduce((s, t) => s + t.xs.length, 0),
+    n_tracks: rows.length, has_labels: tracks.some(t => t.label !== undefined), d_fit_lags: D_FIT_LAGS,
+    ensemble_max_lag: ENSEMBLE_MAX_LAG, warnings: frameWarnings(tracks), tracks: rows, ensemble };
+}
+
+// Validate form parameters (same rules as web/analysis.py parse_params).
+export function checkParams(p) {
+  for (const [k, v] of Object.entries(p)) if (k !== 'coord_unit' && !Number.isFinite(v)) throw new Error(`${k} must be a number`);
+  if (!['px', 'um'].includes(p.coord_unit)) throw new Error("coord_unit must be 'px' or 'um'");
+  if (p.coord_unit === 'px' && !(p.pixel_size_um > 0)) throw new Error('pixel_size_um must be > 0');
+  if (!(p.frame_interval_s > 0)) throw new Error('frame_interval_s must be > 0');
+  return p;
+}
+
+// Minimal RFC 4180 CSV reader -> {columns, rows}.
+export function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  if (!rows.length) throw new Error('The file is empty.');
+  return { columns: rows[0].map(s => s.trim()), rows: rows.slice(1) };
+}
+
+// Track table -> CSV text (particle, frame, x, y[, true_mobility]).
+export function tracksCsv(tracks) {
+  const lab = tracks.some(t => t.label !== undefined);
+  const out = ['particle,frame,x,y' + (lab ? ',true_mobility' : '')];
+  for (const t of tracks) t.frames.forEach((fr, i) => out.push(`${t.id},${fr},${t.xs[i]},${t.ys[i]}${lab ? ',' + (t.label ?? '') : ''}`));
+  return out.join('\n') + '\n';
+}
+
+// Re-apply the class rule with other thresholds to already computed metrics (alpha, ratio, directedness do not
+// depend on the thresholds), as the Validation page's threshold sliders do.
+export function reclassify(rows, p) {
+  return rows.map(r => ({ ...r, mobility_class: classify(num(r.alpha), num(r.confinement_ratio), num(r.directedness), p) }));
+}
