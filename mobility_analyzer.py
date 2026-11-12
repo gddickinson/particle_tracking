@@ -372,7 +372,7 @@ class MobilityAnalyzer:
         confinement = []
         
         for particle_id in tracks['particle'].unique():
-            particle = tracks[tracks['particle'] == particle_id]
+            particle = tracks[tracks['particle'] == particle_id].sort_values('frame')
             
             x = particle['x'].values * pixel_size
             y = particle['y'].values * pixel_size
@@ -526,7 +526,8 @@ class MobilityAnalyzer:
         classes = self.classify_mobility(tracks, pixel_size, fps)
         
         # Track lengths
-        track_lengths = tracks.groupby('particle').size().values
+        # (in the same order as particle_ids: groupby would sort by particle id)
+        track_lengths = tracks.groupby('particle').size().reindex(particle_ids).values
         
         # Assemble summary
         summary = pd.DataFrame({
